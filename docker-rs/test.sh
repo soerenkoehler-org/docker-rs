@@ -1,12 +1,10 @@
 #!/bin/bash
 
-SCRIPTNAME=$(readlink -f $0)
+source ./init.sh
 
-./init.sh
-
-pushd /app/work
-
-./build/generate-testdata.sh
+if [[ -e $FILE_GENERATE_TESTDATA ]]; then
+    $FILE_GENERATE_TESTDATA
+fi
 
 COVERAGE_DIR=$(readlink -f "coverage")
 PROFRAW_DIR="$COVERAGE_DIR/profraw"
