@@ -20,22 +20,23 @@ dispatch_command() {
 
     shell)
         initialize $0
-        "$RUN_DOCKER_RS" --user root -it bash
+        # BUG can not use options after image name
+        $RUN_DOCKER_RS --user root -it bash
     ;;
 
     compile)
         initialize $0
-        "$RUN_DOCKER_RS" compile.sh
+        $RUN_DOCKER_RS compile.sh
     ;;
 
     test)
         initialize $0
-        "$RUN_DOCKER_RS" test.sh
+        $RUN_DOCKER_RS test.sh
     ;;
 
     coverage)
         initialize $0
-        "$RUN_DOCKER_RS" test.sh
+        $RUN_DOCKER_RS test.sh
         nginx -c $(readlink -e ./build/nginx.conf) -p $(pwd)/coverage
     ;;
 
@@ -69,7 +70,7 @@ initialize() {
     DIR_COVERAGE=./coverage
     DIR_DIST="./dist"
 
-    for DIR in DIR_COVERAGE DIR_TARGET DIR_DIST; do
+    for DIR in $DIR_COVERAGE $DIR_TARGET $DIR_DIST; do
         mkdir -p $DIR
         chmod 777 $DIR
     done
