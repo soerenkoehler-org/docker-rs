@@ -1,76 +1,220 @@
 #!/bin/bash
 
-# TODO create one single top level script
 # TODO use some config in working dir
 # TODO use script dir for nginx-config
 
-SCRIPT=$(readlink -e "$0")
-SCRIPTDIR=$(dirname "$SCRIPT")
+main() {
+    initialize $0
+    dispatch_command $1
+}
 
-# check working dir
-if [[ ! -e Cargo.toml ]]; then
-    printf "not in project root\n"
-    exit -1
-fi
+dispatch_command() {
+    # handle input
 
-# prepare output directories
+    case $1 in
 
-DIR_PROJECT=.
-DIR_TARGET=./target
-DIR_COVERAGE=./coverage
+    update)
+        docker pull $IMG_REMOTE
+        docker tag $IMG_REMOTE $IMG_LOCAL
+    ;;
 
-for DIR in DIR_COVERAGE DIR_TARGET; do
-    mkdir -p $DIR
-    chmod 777 $DIR
-done
+    shell)
+        "$RUN_DOCKER_RS" --user root -it bash
+    ;;
 
-# prepare docker
+    compile)
+        "$RUN_DOCKER_RS" compile.sh
+    ;;
 
-IMG_REMOTE=ghcr.io/soerenkoehler-org/docker-rs-cmish:dev
-IMG_LOCAL=docker-rs:latest
+    test)
+        "$RUN_DOCKER_RS" test.sh
+    ;;
 
-RUN_DOCKER_RS=docker run \
-  --mount type=bind,src=$DIR_PROJECT,dst=/app/input,ro \
-  --mount type=bind,src=$DIR_TARGET,dst=/app/target \
-  --mount type=bind,src=$DIR_COVERAGE,dst=/app/coverage \
-  --rm $IMG_LOCAL
+    coverage)
+        "$RUN_DOCKER_RS" test.sh
+        nginx -c $(readlink -e ./build/nginx.conf) -p $(pwd)/coverage
+    ;;
 
-# handle input
+    package)
+        package $2 $3
+    ;;
 
-case $1 in
+    release)
+        release
+    ;;
 
-update)
-    docker pull $IMG_REMOTE
-    docker tag $IMG_REMOTE $IMG_LOCAL
-;;
+    *)
+        printf "missing or wrong command\n"
+    ;;
 
-shell)
-    "$RUN_DOCKER_RS" --user root -it bash
-;;
+    esac
+}
 
-compile)
-    "$RUN_DOCKER_RS" compile.sh
-;;
+initialize() {
+    SCRIPT=$(readlink -e "$1")
+    SCRIPTDIR=$(dirname "$SCRIPT")
 
-test)
-    "$RUN_DOCKER_RS" test.sh
-;;
+    # check working dir
 
-coverage)
-    "$RUN_DOCKER_RS" test.sh
-    nginx -c $(readlink -e ./build/nginx.conf) -p $(pwd)/coverage
-;;
+    if [[ ! -e Cargo.toml ]]; then
+        printf "not in project root\n"
+        exit -1
+    fi
 
-package)
-    printf "not implemented\n"
-;;
+    # prepare output directories
 
-release)
-    printf "not implemented\n"
-;;
+    DIR_PROJECT=.
+    DIR_TARGET=./target
+    DIR_COVERAGE=./coverage
+    DIR_DIST="./dist"
 
-*)
-    printf "missing or wrong command\n"
-;;
+    for DIR in DIR_COVERAGE DIR_TARGET DIR_DIST; do
+        mkdir -p $DIR
+        chmod 777 $DIR
+    done
 
-esac
+    # prepare docker
+
+    IMG_REMOTE=ghcr.io/soerenkoehler-org/docker-rs-cmish:dev
+    IMG_LOCAL=docker-rs:latest
+
+    RUN_DOCKER_RS=docker run \
+    --mount type=bind,src=$DIR_PROJECT,dst=/app/input,ro \
+    --mount type=bind,src=$DIR_TARGET,dst=/app/target \
+    --mount type=bind,src=$DIR_COVERAGE,dst=/app/coverage \
+    --rm $IMG_LOCAL
+}
+
+package() {
+    local NAME_REPLACEMENT="s/$1/$2/"
+
+    local BINARIES=$(find ./target \
+        -type f \
+        -path "*/release/*" \
+        \( -name "rs-chdiff" -or -name "rs-chdiff.exe" \) )
+
+    local ARCH
+    local BIN
+    for BIN in $BINARIES; do
+        local ARTIFACT=$(dirname $BIN)/$(sed $NAME_REPLACEMENT <<< $(basename $BIN))
+
+        mv -v $BIN $ARTIFACT
+
+        case $(basename $(dirname $(dirname $BIN))) in
+        armv7*)
+            ARCH=armV7
+            ;;
+        aarch64*)
+            ARCH=arm64
+            ;;
+        x86_64-pc-windows-gnu)
+            ARCH=win64
+            ;;
+        x86_64-unknown-linux-gnu)
+            ARCH=linux
+            ;;
+        esac
+
+        local DISTNAME="$DISTDIR/chdiff-$(date -I)-$ARCH"
+
+        case $ARCH in
+        *win64*)
+            zip -v9jo "$DISTNAME.zip" "$ARTIFACT"
+            ;;
+        *)
+            tar -cf "$DISTNAME.tar" \
+                -C $(dirname "$ARTIFACT") \
+                $(basename $ARTIFACT)
+            gzip -v9f "$DISTNAME.tar"
+            ;;
+        esac
+
+        printf "\n"
+    done
+
+    pushd ./coverage/html
+    zip -v9r "$DISTDIR/chdiff-$(date -I)-coverage.zip" \
+        ./* \
+        -x *.lcov \
+        -x nginx*
+    popd
+}
+
+release() {
+    printf "verify github auth status:\n%s\n\n" "$(gh auth status)"
+
+    if [[ $GITHUB_REF_TYPE == 'tag' ]]; then
+        create_release_prod
+    elif [[ $GITHUB_REF_TYPE == 'branch' ]]; then
+        create_release_nightly
+    fi
+
+    if [[ -e $DIR_DIST ]]; then
+        upload_artifacts
+    else
+        printf "no artifacts to upload\n"
+    fi
+}
+
+create_release_prod() {
+    RELEASE=$GITHUB_REF_NAME
+
+    local EXISTING=$(gh release list \
+        --json tagName \
+        --jq "[.[] | select(.tagName == \"$RELEASE\").tagName][0]")
+
+    if [[ -z $EXISTING ]]; then
+        printf "create new release '%s'\n" $RELEASE
+        gh release create \
+            --title $RELEASE \
+            --notes "$(date +'%Y-%m-%d %H:%M:%S')" \
+            --verify-tag \
+            $RELEASE
+    else
+        printf "use existing release '%s'\n" $RELEASE
+    fi
+}
+
+create_release_nightly() {
+    RELEASE=nightly
+
+    printf "create/replace release 'nightly' on branch %s\n" $GITHUB_REF_NAME
+
+    fetch_tags
+
+    gh release delete \
+        --cleanup-tag \
+        --yes \
+        $RELEASE \
+        2>/dev/null || true
+
+    # Workaround for https://github.com/cli/cli/issues/8458
+    printf "waiting for tag to be deleted\n"
+    while fetch_tags; git tag -l | grep $RELEASE; do
+        sleep 10;
+        printf "still waiting...\n"
+    done
+
+    fetch_tags
+
+    gh release create \
+        --title "Nightly" \
+        --notes "$(date +'%Y-%m-%d %H:%M:%S')" \
+        --target $GITHUB_REF \
+        --latest=false \
+        $RELEASE
+
+    fetch_tags
+}
+
+fetch_tags() {
+    git fetch --all --force --tags --prune-tags --prune
+}
+
+upload_artifacts() {
+    printf "uploading artifacts to '%s'\n" $RELEASE
+
+    gh release upload --clobber $RELEASE $DIR_DIST/*
+}
+
+main "$@"

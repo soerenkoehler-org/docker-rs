@@ -1,5 +1,7 @@
 #!/bin/bash
 
+# TODO convert into example template
+
 create() {
     create_dir generated/$1/data
     $1
