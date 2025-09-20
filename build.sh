@@ -4,7 +4,6 @@
 # TODO use script dir for nginx-config
 
 main() {
-    initialize $0
     dispatch_command $1
 }
 
@@ -14,32 +13,39 @@ dispatch_command() {
     case $1 in
 
     update)
+        initialize_docker
         docker pull $IMG_REMOTE
         docker tag $IMG_REMOTE $IMG_LOCAL
     ;;
 
     shell)
+        initialize $0
         "$RUN_DOCKER_RS" --user root -it bash
     ;;
 
     compile)
+        initialize $0
         "$RUN_DOCKER_RS" compile.sh
     ;;
 
     test)
+        initialize $0
         "$RUN_DOCKER_RS" test.sh
     ;;
 
     coverage)
+        initialize $0
         "$RUN_DOCKER_RS" test.sh
         nginx -c $(readlink -e ./build/nginx.conf) -p $(pwd)/coverage
     ;;
 
     package)
+        initialize $0
         package $2 $3
     ;;
 
     release)
+        initialize $0
         release
     ;;
 
@@ -51,18 +57,13 @@ dispatch_command() {
 }
 
 initialize() {
-    SCRIPT=$(readlink -e "$1")
-    SCRIPTDIR=$(dirname "$SCRIPT")
-
     # check working dir
-
     if [[ ! -e Cargo.toml ]]; then
         printf "not in project root\n"
         exit -1
     fi
 
     # prepare output directories
-
     DIR_PROJECT=.
     DIR_TARGET=./target
     DIR_COVERAGE=./coverage
@@ -73,16 +74,23 @@ initialize() {
         chmod 777 $DIR
     done
 
-    # prepare docker
+    initialize_docker
+}
 
-    IMG_REMOTE=ghcr.io/soerenkoehler-org/docker-rs-cmish:dev
+initialize_docker() {
+    local TAG=$1
+    if [[ -z $TAG ]];then
+        TAG=main
+    fi
+
+    IMG_REMOTE=ghcr.io/soerenkoehler-org/docker-rs:$TAG
     IMG_LOCAL=docker-rs:latest
 
-    RUN_DOCKER_RS=docker run \
-    --mount type=bind,src=$DIR_PROJECT,dst=/app/input,ro \
-    --mount type=bind,src=$DIR_TARGET,dst=/app/target \
-    --mount type=bind,src=$DIR_COVERAGE,dst=/app/coverage \
-    --rm $IMG_LOCAL
+    RUN_DOCKER_RS="docker run \
+        --mount type=bind,src=$DIR_PROJECT,dst=/app/input,ro \
+        --mount type=bind,src=$DIR_TARGET,dst=/app/target \
+        --mount type=bind,src=$DIR_COVERAGE,dst=/app/coverage \
+        --rm $IMG_LOCAL"
 }
 
 package() {
