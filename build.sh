@@ -1,6 +1,6 @@
 #!/bin/bash
 
-# TODO use some config in working dir
+# TODO use some config in working dir for target arch selection
 # TODO use script dir for nginx-config
 
 main() {
@@ -13,30 +13,29 @@ dispatch_command() {
     case $1 in
 
     update)
-        initialize_docker
+        docker_init
         docker pull $IMG_REMOTE
         docker tag $IMG_REMOTE $IMG_LOCAL
     ;;
 
     shell)
         initialize $0
-        # BUG can not use options after image name
-        $RUN_DOCKER_RS --user root -it bash
+        docker_run bash --user root -it
     ;;
 
     compile)
         initialize $0
-        $RUN_DOCKER_RS compile.sh
+        docker_run compile.sh
     ;;
 
     test)
         initialize $0
-        $RUN_DOCKER_RS test.sh
+        docker_run test.sh
     ;;
 
     coverage)
         initialize $0
-        $RUN_DOCKER_RS test.sh
+        docker_run test.sh
         nginx -c $(readlink -e ./build/nginx.conf) -p $(pwd)/coverage
     ;;
 
@@ -75,10 +74,10 @@ initialize() {
         chmod 777 $DIR
     done
 
-    initialize_docker
+    docker_init
 }
 
-initialize_docker() {
+docker_init() {
     local TAG=$1
     if [[ -z $TAG ]];then
         TAG=main
@@ -87,11 +86,18 @@ initialize_docker() {
     IMG_REMOTE=ghcr.io/soerenkoehler-org/docker-rs:$TAG
     IMG_LOCAL=docker-rs:latest
 
-    RUN_DOCKER_RS="docker run \
+    RUN_DOCKER_RS=""
+}
+
+docker_run() {
+    local CMD=$1
+    shift
+
+    docker run \
         --mount type=bind,src=$DIR_PROJECT,dst=/app/input,ro \
         --mount type=bind,src=$DIR_TARGET,dst=/app/target \
         --mount type=bind,src=$DIR_COVERAGE,dst=/app/coverage \
-        --rm $IMG_LOCAL"
+        --rm $@ $IMG_LOCAL $CMD
 }
 
 package() {
