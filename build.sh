@@ -1,10 +1,9 @@
 #!/bin/bash
 
 # TODO use some config in working dir for target arch selection
-# TODO use script dir for nginx-config
 
 main() {
-    dispatch_command $1
+    dispatch_command $@
 }
 
 dispatch_command() {
@@ -20,26 +19,32 @@ dispatch_command() {
 
     shell)
         initialize $0
-        docker_run bash --user root -it
+        docker_run --user root -it
     ;;
 
     compile)
         initialize $0
-        docker_run compile.sh
+        docker_run -- compile.sh
     ;;
 
     test)
         initialize $0
-        docker_run test.sh
+        docker_run -- test.sh
     ;;
 
     coverage)
         initialize $0
-        docker_run test.sh
-        nginx -c $(readlink -e ./build/nginx.conf) -p $(pwd)/coverage
+        docker_run -- test.sh
+        nginx -c $(readlink -e $DIR_THIS_SCRIPT/nginx.conf) -p $(pwd)/coverage
     ;;
 
     package)
+        if [[ -z $2 || -z $3 ]]; then
+            printf "%s\n" \
+                "usage:" \
+                "docker-rs package SOURCE_BINARY_NAME TARGET_ARTIFACT_NAME"
+            exit -1
+        fi
         initialize $0
         package $2 $3
     ;;
@@ -63,11 +68,13 @@ initialize() {
         exit -1
     fi
 
+    DIR_THIS_SCRIPT=$(dirname $(readlink -e $0))
+
     # prepare output directories
     DIR_PROJECT=.
     DIR_TARGET=./target
     DIR_COVERAGE=./coverage
-    DIR_DIST="./dist"
+    DIR_DIST=./dist
 
     for DIR in $DIR_COVERAGE $DIR_TARGET $DIR_DIST; do
         mkdir -p $DIR
@@ -90,14 +97,23 @@ docker_init() {
 }
 
 docker_run() {
-    local CMD=$1
-    shift
+    local OPTIONS=(
+        --mount type=bind,src=$DIR_PROJECT,dst=/app/input,ro
+        --mount type=bind,src=$DIR_TARGET,dst=/app/target
+        --mount type=bind,src=$DIR_COVERAGE,dst=/app/coverage
+        --rm
+    )
+    while [[ $# > 0 ]]; do
+        if [[ $1 == "--" ]]; then
+            shift
+            break
+        else
+            OPTIONS+=($1)
+            shift
+        fi
+    done
 
-    docker run \
-        --mount type=bind,src=$DIR_PROJECT,dst=/app/input,ro \
-        --mount type=bind,src=$DIR_TARGET,dst=/app/target \
-        --mount type=bind,src=$DIR_COVERAGE,dst=/app/coverage \
-        --rm $@ $IMG_LOCAL $CMD
+    docker run ${OPTIONS[@]} $IMG_LOCAL $CMD bash $@
 }
 
 package() {
@@ -106,7 +122,7 @@ package() {
     local BINARIES=$(find ./target \
         -type f \
         -path "*/release/*" \
-        \( -name "rs-chdiff" -or -name "rs-chdiff.exe" \) )
+        \( -name "$1" -or -name "$1.exe" \) )
 
     local ARCH
     local BIN
@@ -130,7 +146,7 @@ package() {
             ;;
         esac
 
-        local DISTNAME="$DISTDIR/chdiff-$(date -I)-$ARCH"
+        local DISTNAME="$DISTDIR/$1-$(date -I)-$ARCH"
 
         case $ARCH in
         *win64*)
@@ -147,8 +163,8 @@ package() {
         printf "\n"
     done
 
-    pushd ./coverage/html
-    zip -v9r "$DISTDIR/chdiff-$(date -I)-coverage.zip" \
+    pushd $DIR_COVERAGE/html
+    zip -v9r "$DISTDIR/$1-$(date -I)-coverage.zip" \
         ./* \
         -x *.lcov \
         -x nginx*

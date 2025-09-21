@@ -6,6 +6,7 @@ if [[ -e $FILE_GENERATE_TESTDATA ]]; then
     $FILE_GENERATE_TESTDATA
 fi
 
+COVERAGE_EXCEPTIONS_FILE=/app/.llvm-cov-ignore
 COVERAGE_DIR=$(readlink -f "coverage")
 PROFRAW_DIR="$COVERAGE_DIR/profraw"
 PROFDATA_FILE="$COVERAGE_DIR/coverage.profdata"
@@ -46,7 +47,7 @@ OBJECTS=$( \
 )
 
 EXCEPTIONS=$(
-    cat .llvm-cov-ignore \
+    cat $COVERAGE_EXCEPTIONS_FILE \
     | xargs -I {} printf "%s=%s " "-ignore-filename-regex" "{}"
 )
 
