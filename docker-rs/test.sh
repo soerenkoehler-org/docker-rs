@@ -22,11 +22,11 @@ CRATE_NAME_FS_SAFE=$(echo "$CRATE_NAME" | tr '-' '_')
 export RUSTFLAGS="-C instrument-coverage"
 export LLVM_PROFILE_FILE="$PROFRAW_DIR/$CRATE_NAME-%p-%m.profraw"
 
-cargo clean
-rm -rf "$OUTPUT_DIR"/*
 rm -rf "$COVERAGE_DIR"
 mkdir -p "$PROFRAW_DIR"
 mkdir -p "$HTML_TEMP_DIR"
+
+cargo clean
 
 # build debug binary for execution by tests
 cargo b
@@ -77,7 +77,7 @@ llvm-cov show \
     $OBJECTS
 
 # copy HTML report and fix permissions
-cp -r "$HTML_TEMP_DIR" "$OUTPUT_DIR"
+cp -r "$HTML_TEMP_DIR"/* "$OUTPUT_DIR"
 chmod -R 755 "$OUTPUT_DIR"/*
 # copy LCOV report and translate source file pathes for Sonarqube
 cat "$REPORT_TEMP_FILE" | sed 's/^SF:\/app\/work/SF:./' >"$REPORT_FILE"
