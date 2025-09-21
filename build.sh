@@ -24,18 +24,21 @@ dispatch_command() {
 
     compile)
         initialize $0
+        rm -r $DIR_TARGET/*
         docker_run -- compile.sh
     ;;
 
     test)
         initialize $0
+        rm -r $DIR_COVERAGE/*
         docker_run -- test.sh
     ;;
 
     coverage)
         initialize $0
+        rm -r $DIR_COVERAGE/*
         docker_run -- test.sh
-        nginx -c $(readlink -e $DIR_THIS_SCRIPT/nginx.conf) -p $(pwd)/coverage
+        nginx -c $DIR_THIS_SCRIPT/nginx.conf -p $DIR_COVERAGE
     ;;
 
     package)
@@ -46,6 +49,7 @@ dispatch_command() {
             exit -1
         fi
         initialize $0
+        rm -r $DIR_DIST/*
         package $2 $3
     ;;
 
@@ -68,7 +72,7 @@ initialize() {
         exit -1
     fi
 
-    DIR_THIS_SCRIPT=$(dirname $(readlink -e $0))
+    DIR_THIS_SCRIPT=$(dirname $(readlink -e $1))
 
     # prepare output directories
     DIR_PROJECT=.
@@ -77,8 +81,8 @@ initialize() {
     DIR_DIST=./dist
 
     for DIR in $DIR_COVERAGE $DIR_TARGET $DIR_DIST; do
-        mkdir -p $DIR
-        chmod 777 $DIR
+        mkdir -v -p $DIR
+        chmod -v 777 $DIR
     done
 
     docker_init
@@ -146,7 +150,7 @@ package() {
             ;;
         esac
 
-        local DISTNAME="$DISTDIR/$1-$(date -I)-$ARCH"
+        local DISTNAME="$DIR_DIST/$1-$(date -I)-$ARCH"
 
         case $ARCH in
         *win64*)
@@ -163,8 +167,10 @@ package() {
         printf "\n"
     done
 
-    pushd $DIR_COVERAGE/html
-    zip -v9r "$DISTDIR/$1-$(date -I)-coverage.zip" \
+    COVERAGE_ZIP="$(readlink -e $DIR_DIST)/$1-$(date -I)-coverage.zip"
+
+    pushd $DIR_COVERAGE
+    zip -v9r "$COVERAGE_ZIP" \
         ./* \
         -x *.lcov \
         -x nginx*
