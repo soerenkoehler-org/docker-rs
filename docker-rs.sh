@@ -40,6 +40,7 @@ dispatch_command() {
     ;;
 
     package)
+        # FIXME read binary name from Cargo.toml
         if [[ -z $2 || -z $3 ]]; then
             printf "%s\n" \
                 "usage:" \
