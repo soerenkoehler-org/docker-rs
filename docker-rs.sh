@@ -1,7 +1,5 @@
 #!/bin/bash
 
-# TODO use some config in working dir for target arch selection
-
 main() {
     dispatch_command $@
 }

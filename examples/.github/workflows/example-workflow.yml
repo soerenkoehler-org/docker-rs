@@ -1,0 +1,49 @@
+name: example workflow
+
+on:
+  push:
+    branches:
+      - main
+
+jobs:
+  build-and-release:
+    name: build and release
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: "checkout"
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: "login to ghcr.io"
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: "docker pull"
+        run: |
+          docker pull ghcr.io/soerenkoehler-org/docker-rs:main
+          docker tag ghcr.io/soerenkoehler-org/docker-rs:main docker-rs:latest
+
+      - name: "test"
+        run: ./docker-rs/test.sh
+
+      - name: SonarQube Scan
+        if: ${{ github.ref_name == 'main' }}
+        uses: SonarSource/sonarqube-scan-action@v5
+        env:
+          SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
+
+      - name: "compile"
+        run: ./docker-rs/compile.sh
+
+      - name: "package"
+        run: ./docker-rs/package.sh BINARY-NAME ARTIFACT-NAME
+
+      - name: "create release"
+        run: ./docker-rs/release.sh
+        env:
+          GH_TOKEN: ${{ github.token }}
