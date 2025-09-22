@@ -16,6 +16,7 @@ HTML_TEMP_DIR="$COVERAGE_DIR/html"
 OUTPUT_DIR=/app/coverage
 REPORT_FILE="$OUTPUT_DIR/coverage.lcov"
 
+# FIXME read crate name from Cargo.toml
 CRATE_NAME="rs-chdiff"
 CRATE_NAME_FS_SAFE=$(echo "$CRATE_NAME" | tr '-' '_')
 
