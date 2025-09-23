@@ -29,7 +29,8 @@ dispatch_command() {
     test)
         initialize $0
         rm -r $DIR_COVERAGE/*
-        docker_run -- test.sh
+        read_crate_name
+        docker_run -- test.sh $CRATE_NAME
     ;;
 
     coverage)
@@ -251,6 +252,31 @@ upload_artifacts() {
     printf "uploading artifacts to '%s'\n" $RELEASE
 
     gh release upload --clobber $RELEASE $DIR_DIST/*
+}
+
+read_crate_name() {
+    readarray -t TOML <Cargo.toml
+
+    local RE_SECTION='^[[:blank:]]*\[(.+)\]$'
+    local RE_NAME='^[[:blank:]]*name[[:blank:]]+=[[:blank:]]\"([[:graph:]]+)\"$'
+
+    local LINE
+    local SECTION
+
+    for LINE in "${TOML[@]}"; do
+        if [[ $LINE =~ $RE_SECTION ]]; then
+            SECTION=${BASH_REMATCH[1]}
+        elif [[ $LINE =~ $RE_NAME ]]; then
+            if [[ $SECTION == "package" ]]; then
+                CRATE_NAME=${BASH_REMATCH[1]}
+            fi
+        fi
+    done
+
+    if [[ -z $CRATE_NAME ]]; then
+        printf "Check your Cargo.toml: could not determine crate name.\n"
+        exit -1
+    fi
 }
 
 main "$@"
