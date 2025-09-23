@@ -1,4 +1,4 @@
-name: docker tools
+name: docker-rs
 
 on:
   push:
