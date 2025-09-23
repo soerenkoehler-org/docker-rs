@@ -29,7 +29,6 @@ dispatch_command() {
     test)
         initialize $0
         rm -r $DIR_COVERAGE/*
-        read_crate_name
         docker_run -- test.sh $CRATE_NAME
     ;;
 
@@ -42,15 +41,15 @@ dispatch_command() {
 
     package)
         # FIXME read binary name from Cargo.toml
-        if [[ -z $2 || -z $3 ]]; then
+        if [[ -z $2 ]]; then
             printf "%s\n" \
                 "usage:" \
-                "docker-rs package SOURCE_BINARY_NAME TARGET_ARTIFACT_NAME"
+                "docker-rs.sh package TARGET_ARTIFACT_NAME"
             exit -1
         fi
         initialize $0
         rm -r $DIR_DIST/*
-        package $2 $3
+        package $2
     ;;
 
     release)
@@ -86,6 +85,7 @@ initialize() {
     done
 
     docker_init
+    read_crate_name
 }
 
 docker_init() {
@@ -121,12 +121,12 @@ docker_run() {
 }
 
 package() {
-    local NAME_REPLACEMENT="s/$1/$2/"
+    local NAME_REPLACEMENT="s/$CRATE_NAME/$1/"
 
     local BINARIES=$(find ./target \
         -type f \
         -path "*/release/*" \
-        \( -name "$1" -or -name "$1.exe" \) )
+        \( -name "$CRATE_NAME" -or -name "$CRATE_NAME.exe" \) )
 
     local ARCH
     local BIN
