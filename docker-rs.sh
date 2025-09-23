@@ -1,6 +1,7 @@
 #!/bin/bash
 
 main() {
+    initialize "$0"
     dispatch_command $@
 }
 
@@ -10,50 +11,49 @@ dispatch_command() {
     case $1 in
 
     update)
-        docker_init
+        initialize_docker
         docker pull $IMG_REMOTE
         docker tag $IMG_REMOTE $IMG_LOCAL
     ;;
 
     shell)
-        initialize $0
+        initialize_workspace
         docker_run --user root -it
     ;;
 
     compile)
-        initialize $0
+        initialize_workspace
         rm -r $DIR_TARGET/*
         docker_run -- compile.sh
     ;;
 
     test)
-        initialize $0
+        initialize_workspace
         rm -r $DIR_COVERAGE/*
         docker_run -- test.sh $CRATE_NAME
     ;;
 
     coverage)
-        initialize $0
+        initialize_workspace
         rm -r $DIR_COVERAGE/*
-        docker_run -- test.sh
-        nginx -c $DIR_THIS_SCRIPT/nginx.conf -p $DIR_COVERAGE
+        docker_run -- test.sh $CRATE_NAME
+        nginx -c "$DIR_THIS_SCRIPT/nginx.conf" -p $DIR_COVERAGE
     ;;
 
     package)
-        # FIXME read binary name from Cargo.toml
         if [[ -z $2 ]]; then
             printf "%s\n" \
                 "usage:" \
                 "docker-rs.sh package TARGET_ARTIFACT_NAME"
             exit -1
         fi
-        initialize $0
+        initialize_workspace
         rm -r $DIR_DIST/*
         package $2
     ;;
 
     release)
-        initialize $0
+        initialize_workspace
         release
     ;;
 
@@ -65,13 +65,16 @@ dispatch_command() {
 }
 
 initialize() {
+    THIS_SCRIPT=$(readlink -e "$1")
+    DIR_THIS_SCRIPT=$(dirname "$THIS_SCRIPT")
+}
+
+initialize_workspace() {
     # check working dir
     if [[ ! -e Cargo.toml ]]; then
         printf "not in project root\n"
         exit -1
     fi
-
-    DIR_THIS_SCRIPT=$(dirname $(readlink -e $1))
 
     # prepare output directories
     DIR_PROJECT=.
@@ -84,11 +87,11 @@ initialize() {
         chmod -v 777 $DIR
     done
 
-    docker_init
+    initialize_docker
     read_crate_name
 }
 
-docker_init() {
+initialize_docker() {
     local TAG=$1
     if [[ -z $TAG ]];then
         TAG=main
