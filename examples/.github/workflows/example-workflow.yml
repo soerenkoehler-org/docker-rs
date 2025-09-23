@@ -1,0 +1,54 @@
+name: example workflow
+
+on:
+  push:
+    branches:
+      - main
+      - dev
+
+jobs:
+  build-and-release:
+    name: build and release
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: checkout YOUR-PROJECT
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: checkout docker-rs
+        uses: actions/checkout@v4
+        with:
+          repository: soerenkoehler-org/docker-rs
+          path: ./docker-rs
+
+      - name: login to ghcr.io
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: pull docker-rs container image
+        run: ./docker-rs/docker-rs.sh update
+
+      - name: run tests
+        run: ./docker-rs/docker-rs.sh test
+
+      - name: scan with SonarQube
+        if: ${{ github.ref_name == 'main' }}
+        uses: SonarSource/sonarqube-scan-action@v5
+        env:
+          SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
+
+      - name: compile
+        run: ./docker-rs/docker-rs.sh compile
+
+      - name: package artifacts
+        run: ./docker-rs/docker-rs.sh package ARTIFACTS-BASENAME
+
+      - name: create release
+        run: ./docker-rs/docker-rs.sh release
+        env:
+          GH_TOKEN: ${{ github.token }}

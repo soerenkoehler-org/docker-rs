@@ -61,5 +61,5 @@ RUN curl --proto "=https" -sSf https://sh.rustup.rs | bash -s -- -y \
     && rustup default \
     && cargo install rustfilt
 
-# install custom scripts
-COPY *.sh .
+# install custom scripts and other files
+COPY *.sh .llvm-cov-ignore .

@@ -16,17 +16,17 @@ HTML_TEMP_DIR="$COVERAGE_DIR/html"
 OUTPUT_DIR=/app/coverage
 REPORT_FILE="$OUTPUT_DIR/coverage.lcov"
 
-CRATE_NAME="rs-chdiff"
+CRATE_NAME=$1
 CRATE_NAME_FS_SAFE=$(echo "$CRATE_NAME" | tr '-' '_')
 
 export RUSTFLAGS="-C instrument-coverage"
 export LLVM_PROFILE_FILE="$PROFRAW_DIR/$CRATE_NAME-%p-%m.profraw"
 
-cargo clean
-rm -rf "$OUTPUT_DIR"/*
 rm -rf "$COVERAGE_DIR"
 mkdir -p "$PROFRAW_DIR"
 mkdir -p "$HTML_TEMP_DIR"
+
+cargo clean
 
 # build debug binary for execution by tests
 cargo b

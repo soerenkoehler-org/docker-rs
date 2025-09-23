@@ -1,8 +1,7 @@
 #!/bin/bash
 
-# TODO use some config in working dir for target arch selection
-
 main() {
+    initialize "$0"
     dispatch_command $@
 }
 
@@ -12,45 +11,49 @@ dispatch_command() {
     case $1 in
 
     update)
-        docker_init
+        initialize_docker
         docker pull $IMG_REMOTE
         docker tag $IMG_REMOTE $IMG_LOCAL
     ;;
 
     shell)
-        initialize $0
+        initialize_workspace
         docker_run --user root -it
     ;;
 
     compile)
-        initialize $0
+        initialize_workspace
+        rm -r $DIR_TARGET/*
         docker_run -- compile.sh
     ;;
 
     test)
-        initialize $0
-        docker_run -- test.sh
+        initialize_workspace
+        rm -r $DIR_COVERAGE/*
+        docker_run -- test.sh $CRATE_NAME
     ;;
 
     coverage)
-        initialize $0
-        docker_run -- test.sh
-        nginx -c $(readlink -e $DIR_THIS_SCRIPT/nginx.conf) -p $(pwd)/coverage
+        initialize_workspace
+        rm -r $DIR_COVERAGE/*
+        docker_run -- test.sh $CRATE_NAME
+        nginx -c "$DIR_THIS_SCRIPT/nginx.conf" -p $DIR_COVERAGE
     ;;
 
     package)
-        if [[ -z $2 || -z $3 ]]; then
+        if [[ -z $2 ]]; then
             printf "%s\n" \
                 "usage:" \
-                "docker-rs package SOURCE_BINARY_NAME TARGET_ARTIFACT_NAME"
+                "docker-rs.sh package TARGET_ARTIFACT_NAME"
             exit -1
         fi
-        initialize $0
-        package $2 $3
+        initialize_workspace
+        rm -r $DIR_DIST/*
+        package $2
     ;;
 
     release)
-        initialize $0
+        initialize_workspace
         release
     ;;
 
@@ -62,13 +65,16 @@ dispatch_command() {
 }
 
 initialize() {
+    THIS_SCRIPT=$(readlink -e "$1")
+    DIR_THIS_SCRIPT=$(dirname "$THIS_SCRIPT")
+}
+
+initialize_workspace() {
     # check working dir
     if [[ ! -e Cargo.toml ]]; then
         printf "not in project root\n"
         exit -1
     fi
-
-    DIR_THIS_SCRIPT=$(dirname $(readlink -e $0))
 
     # prepare output directories
     DIR_PROJECT=.
@@ -77,14 +83,15 @@ initialize() {
     DIR_DIST=./dist
 
     for DIR in $DIR_COVERAGE $DIR_TARGET $DIR_DIST; do
-        mkdir -p $DIR
-        chmod 777 $DIR
+        mkdir -v -p $DIR
+        chmod -v 777 $DIR
     done
 
-    docker_init
+    initialize_docker
+    read_crate_name
 }
 
-docker_init() {
+initialize_docker() {
     local TAG=$1
     if [[ -z $TAG ]];then
         TAG=main
@@ -117,12 +124,12 @@ docker_run() {
 }
 
 package() {
-    local NAME_REPLACEMENT="s/$1/$2/"
+    local NAME_REPLACEMENT="s/$CRATE_NAME/$1/"
 
     local BINARIES=$(find ./target \
         -type f \
         -path "*/release/*" \
-        \( -name "$1" -or -name "$1.exe" \) )
+        \( -name "$CRATE_NAME" -or -name "$CRATE_NAME.exe" \) )
 
     local ARCH
     local BIN
@@ -146,7 +153,7 @@ package() {
             ;;
         esac
 
-        local DISTNAME="$DISTDIR/$1-$(date -I)-$ARCH"
+        local DISTNAME="$DIR_DIST/$1-$(date -I)-$ARCH"
 
         case $ARCH in
         *win64*)
@@ -163,8 +170,10 @@ package() {
         printf "\n"
     done
 
-    pushd $DIR_COVERAGE/html
-    zip -v9r "$DISTDIR/$1-$(date -I)-coverage.zip" \
+    COVERAGE_ZIP="$(readlink -e $DIR_DIST)/$1-$(date -I)-coverage.zip"
+
+    pushd $DIR_COVERAGE
+    zip -v9r "$COVERAGE_ZIP" \
         ./* \
         -x *.lcov \
         -x nginx*
@@ -246,6 +255,31 @@ upload_artifacts() {
     printf "uploading artifacts to '%s'\n" $RELEASE
 
     gh release upload --clobber $RELEASE $DIR_DIST/*
+}
+
+read_crate_name() {
+    readarray -t TOML <Cargo.toml
+
+    local RE_SECTION='^[[:blank:]]*\[(.+)\]$'
+    local RE_NAME='^[[:blank:]]*name[[:blank:]]+=[[:blank:]]\"([[:graph:]]+)\"$'
+
+    local LINE
+    local SECTION
+
+    for LINE in "${TOML[@]}"; do
+        if [[ $LINE =~ $RE_SECTION ]]; then
+            SECTION=${BASH_REMATCH[1]}
+        elif [[ $LINE =~ $RE_NAME ]]; then
+            if [[ $SECTION == "package" ]]; then
+                CRATE_NAME=${BASH_REMATCH[1]}
+            fi
+        fi
+    done
+
+    if [[ -z $CRATE_NAME ]]; then
+        printf "Check your Cargo.toml: could not determine crate name.\n"
+        exit -1
+    fi
 }
 
 main "$@"
