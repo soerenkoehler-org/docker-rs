@@ -4,6 +4,7 @@ on:
   push:
     branches:
       - main
+      - dev
 
 jobs:
   build-and-release:
@@ -11,39 +12,43 @@ jobs:
     runs-on: ubuntu-latest
 
     steps:
-      - name: "checkout"
+      - name: checkout YOUR-PROJECT
         uses: actions/checkout@v4
         with:
           fetch-depth: 0
 
-      - name: "login to ghcr.io"
+      - name: checkout docker-rs
+        uses: actions/checkout@v4
+        with:
+          repository: soerenkoehler-org/docker-rs
+          path: ./docker-rs
+
+      - name: login to ghcr.io
         uses: docker/login-action@v3
         with:
           registry: ghcr.io
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
 
-      - name: "docker pull"
-        run: |
-          docker pull ghcr.io/soerenkoehler-org/docker-rs:main
-          docker tag ghcr.io/soerenkoehler-org/docker-rs:main docker-rs:latest
+      - name: pull docker-rs container image
+        run: ./docker-rs/docker-rs.sh update
 
-      - name: "test"
-        run: ./docker-rs/test.sh
+      - name: run tests
+        run: ./docker-rs/docker-rs.sh test
 
-      - name: SonarQube Scan
+      - name: scan with SonarQube
         if: ${{ github.ref_name == 'main' }}
         uses: SonarSource/sonarqube-scan-action@v5
         env:
           SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
 
-      - name: "compile"
-        run: ./docker-rs/compile.sh
+      - name: compile
+        run: ./docker-rs/docker-rs.sh compile
 
-      - name: "package"
-        run: ./docker-rs/package.sh BINARY-NAME ARTIFACT-NAME
+      - name: package artifacts
+        run: ./docker-rs/docker-rs.sh package ARTIFACTS-BASENAME
 
-      - name: "create release"
-        run: ./docker-rs/release.sh
+      - name: create release
+        run: ./docker-rs/docker-rs.sh release
         env:
           GH_TOKEN: ${{ github.token }}
