@@ -11,9 +11,9 @@ main() {
 }
 
 initialize_workspace() {
-    rm -rf /app/work/*
+    rm -rf "$WORK_DIR/"*
 
-    pushd /app/work
+    pushd "$WORK_DIR"
 
     # copy source project
     find /app/input -mindepth 1 -maxdepth 1 \
